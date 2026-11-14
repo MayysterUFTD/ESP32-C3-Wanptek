@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101923">
+  <title>Wanptek PSU</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, sans-serif;
+      background: #101923;
+      color: #e8eef5;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px 16px; }
+    main { width: min(100%, 760px); margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: 1.8rem; }
+    h2 { margin: 0 0 18px; font-size: 1.1rem; }
+    .muted, .limits { color: #9aabba; }
+    .status, .card, .controls {
+      border: 1px solid #2c3b4a;
+      border-radius: 12px;
+      background: #172431;
+    }
+    .status { padding: 12px 16px; margin: 20px 0; }
+    .status.online { border-color: #23896c; }
+    .status.offline { border-color: #a64b51; }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .card { padding: 16px; }
+    .reading { display: block; margin-top: 6px; font-size: 1.8rem; font-variant-numeric: tabular-nums; }
+    .controls { margin-top: 16px; padding: 18px; }
+    .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label { display: grid; gap: 6px; font-weight: 600; }
+    input {
+      width: 100%;
+      padding: 11px;
+      border: 1px solid #45586b;
+      border-radius: 8px;
+      background: #0e1821;
+      color: inherit;
+      font: inherit;
+    }
+    button {
+      min-height: 44px;
+      padding: 10px 14px;
+      border: 0;
+      border-radius: 8px;
+      background: #16866d;
+      color: white;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.secondary { background: #34495c; }
+    button.danger { background: #a7444d; }
+    button:disabled, input:disabled { opacity: .45; cursor: not-allowed; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    #message { min-height: 1.5em; margin: 12px 0 0; color: #f0bf74; }
+    canvas { display: block; width: 100%; height: 180px; }
+    .chart-label { margin: 0 0 8px; color: #9aabba; font-weight: 600; }
+    summary { cursor: pointer; font-weight: 700; }
+    #wifi-message { min-height: 1.5em; color: #f0bf74; }
+    @media (max-width: 480px) {
+      body { padding: 18px 12px; }
+      .fields { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Wanptek — Control</h1>
+    <div class="muted">Local power supply control panel</div>
+    <div id="status" class="status offline">Waiting for the power supply…</div>
+
+    <section class="grid" aria-label="Measurements">
+      <div class="card">
+        <span class="muted">Output voltage</span>
+        <strong id="voltage" class="reading">— V</strong>
+      </div>
+      <div class="card">
+        <span class="muted">Output current</span>
+        <strong id="current" class="reading">— A</strong>
+      </div>
+      <div class="card">
+        <span class="muted">Power</span>
+        <strong id="power" class="reading">— W</strong>
+      </div>
+      <div class="card">
+        <span class="muted">Regulation mode</span>
+        <strong id="mode" class="reading">—</strong>
+      </div>
+    </section>
+
+    <section class="controls">
+      <h2>Setpoints</h2>
+      <form id="setpoints">
+        <div class="fields">
+          <label for="set-voltage">Voltage (V)
+            <input id="set-voltage" type="number" min="0" step="0.01" required>
+          </label>
+          <label for="set-current">Current limit (A)
+            <input id="set-current" type="number" min="0" step="0.001" required>
+          </label>
+        </div>
+        <p id="limits" class="limits"></p>
+        <div class="actions">
+          <button id="apply" type="submit" disabled>Apply setpoints</button>
+          <button id="remote" class="secondary" type="button" disabled>Remote control: —</button>
+          <button id="output" class="secondary" type="button" disabled>Output: —</button>
+          <button id="ocp" class="secondary" type="button" disabled>OCP: —</button>
+        </div>
+      </form>
+      <p id="message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="controls">
+      <h2>Charts</h2>
+      <p class="limits">Last 600 received measurements; history is not saved when the page is closed.</p>
+      <p class="chart-label">Voltage (V)</p>
+      <canvas id="voltage-chart" aria-label="Voltage chart"></canvas>
+      <p class="chart-label">Current (A)</p>
+      <canvas id="current-chart" aria-label="Current chart"></canvas>
+      <form id="poll-form">
+        <label for="poll-interval">Requested polling interval (10–1000 ms)
+          <input id="poll-interval" type="number" min="10" max="1000" step="1" value="100" required>
+        </label>
+        <div class="actions"><button type="submit">Set interval</button></div>
+      </form>
+      <p id="poll-status" class="limits">Waiting for a measurement…</p>
+      <p id="poll-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <details class="controls">
+      <summary>Wi-Fi settings</summary>
+      <p id="wifi-status" class="muted">Reading Wi-Fi status…</p>
+      <form id="wifi-form">
+        <div class="fields">
+          <label for="wifi-ssid">Network name (SSID)
+            <input id="wifi-ssid" name="ssid" type="text" maxlength="32" required autocomplete="off">
+          </label>
+          <label for="wifi-password">Network password
+            <input id="wifi-password" name="password" type="password" maxlength="63" autocomplete="new-password">
+          </label>
+        </div>
+        <p class="limits">Leave the password empty for an open network. The ESP supports 2.4 GHz Wi-Fi.</p>
+        <div class="actions">
+          <button type="submit">Connect and save</button>
+          <button id="wifi-forget" class="secondary" type="button">Forget network</button>
+        </div>
+      </form>
+      <p id="wifi-message" role="status" aria-live="polite"></p>
+    </details>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let state;
+    let editing = false;
+    let pendingSetpoints = null;
+    let fetchInterval = 100;
+    let lastSequence = null;
+    let refreshInProgress = false;
+    let chartPending = false;
+    const history = [];
+
+    function drawChart(id, field, color, decimals) {
+      const canvas = $(id);
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const scale = window.devicePixelRatio || 1;
+      canvas.width = Math.round(rect.width * scale);
+      canvas.height = Math.round(rect.height * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      const left = 56, top = 14, right = 12, bottom = 25;
+      const width = Math.max(1, rect.width - left - right);
+      const height = Math.max(1, rect.height - top - bottom);
+      const samples = history.filter((point) => point !== null);
+      const maximum = Math.max(0.001, ...samples.map((point) => point[field])) * 1.1;
+      const start = samples.length ? samples[0].time : 0;
+      const end = samples.length ? samples[samples.length - 1].time : start;
+      const duration = Math.max(1000, end - start);
+      ctx.strokeStyle = "#45586b";
+      ctx.fillStyle = "#9aabba";
+      ctx.font = "12px system-ui";
+      ctx.beginPath();
+      ctx.moveTo(left, top);
+      ctx.lineTo(left, top + height);
+      ctx.lineTo(left + width, top + height);
+      ctx.stroke();
+      ctx.fillText(maximum.toFixed(decimals), 2, top + 8);
+      ctx.fillText("0", 2, top + height);
+      ctx.fillText(`last ${((end - start) / 1000).toFixed(1)} s`, left, top + height + 18);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      let drawing = false;
+      for (const point of history) {
+        if (point === null) {
+          drawing = false;
+          continue;
+        }
+        const x = left + width * (point.time - start) / duration;
+        const y = top + height * (1 - point[field] / maximum);
+        if (drawing) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+        drawing = true;
+      }
+      ctx.stroke();
+    }
+
+    function scheduleCharts() {
+      if (chartPending) return;
+      chartPending = true;
+      window.requestAnimationFrame(() => {
+        chartPending = false;
+        drawChart("voltage-chart", "voltage", "#39c5a5", 2);
+        drawChart("current-chart", "current", "#ffba62", 3);
+      });
+    }
+
+    function recordSample(data) {
+      if (!data.connected) {
+        if (history.length && history[history.length - 1] !== null) history.push(null);
+      } else if (data.sampleSequence !== lastSequence) {
+        lastSequence = data.sampleSequence;
+        history.push({ time: performance.now(), voltage: data.voltage, current: data.current });
+      } else {
+        return;
+      }
+      while (history.length > 600) history.shift();
+      scheduleCharts();
+    }
+
+    async function command(path, params) {
+      const query = new URLSearchParams(params);
+      const response = await fetch(`${path}?${query}`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Command failed");
+      $("message").textContent = "Command queued";
+      return result;
+    }
+
+    function render(data) {
+      state = data;
+      if (data.commandError) $("message").textContent = data.commandError;
+      fetchInterval = data.pollIntervalMs;
+      if (document.activeElement !== $("poll-interval")) {
+        $("poll-interval").value = data.pollIntervalMs;
+      }
+      $("poll-status").textContent = data.connected && data.sampleIntervalMs
+        ? `Actual measurement interval: ${data.sampleIntervalMs} ms.`
+        : "Waiting for a measurement…";
+      recordSample(data);
+      if (pendingSetpoints && pendingSetpoints.id === data.commandId) {
+        if (data.commandStatus === "confirmed") {
+          pendingSetpoints = null;
+          editing = false;
+          $("message").textContent = "Setpoints confirmed by power supply readback";
+        } else if (data.commandStatus === "failed") {
+          pendingSetpoints = null;
+          editing = true;
+          $("message").textContent = data.commandError || "Could not confirm setpoints";
+        } else {
+          $("message").textContent = "Waiting for setpoint confirmation…";
+        }
+      }
+      const status = $("status");
+      status.className = `status ${data.connected ? "online" : "offline"}`;
+      status.textContent = data.connected
+        ? `Connected · output ${data.outputOn ? "ON" : "OFF"}`
+        : (data.error || "No response from power supply");
+
+      $("voltage").textContent = `${data.voltage.toFixed(2)} V`;
+      $("current").textContent = `${data.current.toFixed(3)} A`;
+      $("power").textContent = `${(data.voltage * data.current).toFixed(2)} W`;
+      $("mode").textContent = data.alarm ? "ALARM" :
+        (data.constantCurrent ? "CC" : "CV");
+      $("limits").textContent =
+        `Power supply range: 0–${data.maxVoltage.toFixed(2)} V · 0–${data.maxCurrent.toFixed(3)} A`;
+
+      if (!editing) {
+        $("set-voltage").value = data.setVoltage.toFixed(2);
+        $("set-current").value = data.setCurrent.toFixed(3);
+      }
+
+      $("set-voltage").max = data.maxVoltage;
+      $("set-current").max = data.maxCurrent;
+      $("set-voltage").disabled = !data.connected || !data.remoteControl;
+      $("set-current").disabled = !data.connected || !data.remoteControl;
+      $("apply").disabled = !data.connected || !data.remoteControl;
+      $("remote").disabled = !data.connected;
+      $("output").disabled = !data.connected;
+      $("ocp").disabled = !data.connected;
+      $("remote").textContent =
+        `Remote control: ${data.remoteControl ? "ON" : "OFF"}`;
+      $("output").textContent = `Output: ${data.outputOn ? "ON" : "OFF"}`;
+      $("output").className = data.outputOn ? "danger" : "secondary";
+      $("ocp").textContent = `OCP: ${data.ocpOn ? "ON" : "OFF"}`;
+    }
+
+    async function refresh() {
+      if (refreshInProgress) return;
+      refreshInProgress = true;
+      try {
+        const response = await fetch("/api/state", { cache: "no-store" });
+        if (!response.ok) throw new Error("Could not retrieve power supply status");
+        render(await response.json());
+      } catch (error) {
+        $("status").className = "status offline";
+        $("status").textContent = error.message;
+        if (history.length && history[history.length - 1] !== null) {
+          history.push(null);
+          if (history.length > 600) history.shift();
+          scheduleCharts();
+        }
+        for (const id of ["set-voltage", "set-current", "apply", "remote", "output", "ocp"]) {
+          $(id).disabled = true;
+        }
+      } finally {
+        refreshInProgress = false;
+      }
+    }
+
+    async function pollLoop() {
+      const started = performance.now();
+      await refresh();
+      window.setTimeout(pollLoop, Math.max(0, fetchInterval - (performance.now() - started)));
+    }
+
+    $("poll-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const query = new URLSearchParams({ interval: $("poll-interval").value });
+        const response = await fetch(`/api/poll?${query}`, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not set polling interval");
+        fetchInterval = Number($("poll-interval").value);
+        $("poll-message").textContent = "Interval set; it will reset to 100 ms after a restart.";
+      } catch (error) {
+        $("poll-message").textContent = error.message;
+      }
+    });
+
+    async function refreshWifi() {
+      try {
+        const response = await fetch("/api/wifi", { cache: "no-store" });
+        if (!response.ok) throw new Error("Could not retrieve Wi-Fi status");
+        const wifi = await response.json();
+        if (wifi.connected) {
+          $("wifi-status").textContent = `Connected to ${wifi.ssid}. Panel: http://${wifi.ip}` +
+            (wifi.apStarted ? ". The fallback AP will soon be disabled; switch your device to the home network." : "");
+        } else if (wifi.connecting) {
+          $("wifi-status").textContent = `Connecting to ${wifi.ssid}…`;
+        } else {
+          $("wifi-status").textContent = wifi.apStarted
+            ? "Not connected to the home network. The fallback AP is active."
+            : "Not connected to the home network; the fallback AP is inactive.";
+        }
+        $("wifi-message").textContent = wifi.error || "";
+      } catch (error) {
+        $("wifi-message").textContent = "Connection to the panel lost. After switching Wi-Fi networks, open the address shown above.";
+      }
+    }
+
+    async function sendWifi(path, params) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(params)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not change Wi-Fi settings");
+    }
+
+    $("wifi-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = event.submitter;
+      button.disabled = true;
+      try {
+        await sendWifi("/api/wifi", {
+          ssid: $("wifi-ssid").value,
+          password: $("wifi-password").value
+        });
+        $("wifi-password").value = "";
+        $("wifi-message").textContent = "Settings sent. Attempting to connect.";
+        window.setTimeout(refreshWifi, 1500);
+      } catch (error) {
+        $("wifi-message").textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    $("wifi-forget").addEventListener("click", async () => {
+      if (!window.confirm("Forget the saved network and return to the fallback AP?")) return;
+      try {
+        await sendWifi("/api/wifi/forget", {});
+        $("wifi-password").value = "";
+        $("wifi-message").textContent = "Removing settings. Connect to the fallback AP.";
+        window.setTimeout(refreshWifi, 1500);
+      } catch (error) {
+        $("wifi-message").textContent = error.message;
+      }
+    });
+
+    $("set-voltage").addEventListener("input", () => { editing = true; });
+    $("set-current").addEventListener("input", () => { editing = true; });
+    $("setpoints").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      pendingSetpoints = {
+        voltage: Number($("set-voltage").value),
+        current: Number($("set-current").value),
+        id: null
+      };
+      editing = true;
+      try {
+        const result = await command("/api/set", {
+          voltage: pendingSetpoints.voltage,
+          current: pendingSetpoints.current
+        });
+        pendingSetpoints.id = result.id;
+      } catch (error) {
+        pendingSetpoints = null;
+        editing = true;
+        $("message").textContent = error.message;
+      }
+      refresh();
+    });
+
+    $("remote").addEventListener("click", async () => {
+      try {
+        await command("/api/remote", { enabled: state.remoteControl ? "0" : "1" });
+      } catch (error) {
+        $("message").textContent = error.message;
+      }
+      refresh();
+    });
+
+    $("output").addEventListener("click", async () => {
+      const enabled = !state.outputOn;
+      if (enabled && !window.confirm("Enable the power supply output?")) return;
+      try {
+        await command("/api/output", { enabled: enabled ? "1" : "0" });
+      } catch (error) {
+        $("message").textContent = error.message;
+      }
+      refresh();
+    });
+
+    $("ocp").addEventListener("click", async () => {
+      try {
+        await command("/api/ocp", { enabled: state.ocpOn ? "0" : "1" });
+      } catch (error) {
+        $("message").textContent = error.message;
+      }
+      refresh();
+    });
+
+    window.addEventListener("resize", scheduleCharts);
+    scheduleCharts();
+    pollLoop();
+    refreshWifi();
+    window.setInterval(refreshWifi, 2000);
+  </script>
+</body>
+</html>
