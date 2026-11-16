@@ -1,89 +1,144 @@
-# ESP32 Wanptek PSU controller
+# Wanptek PSU Controller
 
-The ESP32-C3 connects to a configured 2.4 GHz Wi-Fi network and serves a local
-web panel for monitoring and controlling a compatible Wanptek power supply.
-When the network is unavailable, it creates a password-protected fallback AP.
+An ESP32-C3 firmware project with a local web panel for monitoring and
+controlling a compatible Wanptek power supply. The ESP connects to a 2.4 GHz
+Wi-Fi network and starts a password-protected fallback access point for setup
+and recovery.
+
+## Features
+
+- Live voltage, current, power, and regulation-mode readings
+- Voltage and current setpoint control, with confirmation from PSU readback
+- Remote-control, output, and over-current-protection (OCP) toggles
+- Live charts for the latest 600 measurements
+- Configurable measurement polling interval
+- Web-based Wi-Fi setup, saved credentials, and fallback access point
+
+## Requirements
+
+- An ESP32-C3 development board supported by the PlatformIO
+  `esp32-c3-devkitm-1` board definition
+- PlatformIO Core (`pio`) or the PlatformIO IDE extension for Visual Studio
+  Code
+- A compatible Wanptek power supply and an electrical interface appropriate
+  for its communication port
+- A 2.4 GHz Wi-Fi network (optional if you only use the fallback access point)
+
+The firmware uses the ESP32-C3 native USB Serial/JTAG port for logs. Some
+boards may need a lower Wi-Fi transmit power; see
+[Troubleshooting](#troubleshooting).
 
 ## Build and upload
 
-From this directory, build and upload the firmware and the SPIFFS web files:
+1. Clone this repository and open its root directory.
+2. Create `config.local.ini` in the project root with a private access point
+   password:
 
-```powershell
-pio run -t upload
-pio run -t uploadfs
-pio device monitor
-```
+   ```ini
+   [env]
+   build_flags = -DWANPTEK_AP_PASSWORD=\"choose-a-password\"
+   ```
 
-The firmware upload does not upload the web files. Run `pio run -t uploadfs`
-after uploading the firmware, and again whenever files in `data` change.
-The filesystem image must be SPIFFS, as configured in `platformio.ini`.
+   The password must be 8–63 characters. This local file is ignored by Git;
+   keep it private. The firmware will not build without this setting.
+3. Connect the ESP32-C3 board over USB and run:
 
-The monitor runs at 19200 baud. It prints the active access-point name and
-panel URL, or the address assigned by the home network.
-The firmware uses the ESP32-C3 native USB Serial/JTAG port for `Serial`, not an
-external UART-to-USB adapter. The AP status is repeated every 10 seconds. If the
-board uses an external UART adapter instead, remove the USB build flags from
-`platformio.ini` and rebuild. Some ESP32-C3 boards require reduced transmit
-power; set `-DWANPTEK_WIFI_TX_POWER=WIFI_POWER_8_5dBm` in `config.local.ini`
-if the access point is not visible at the default power.
+   ```sh
+   pio run -t upload
+   pio run -t uploadfs
+   pio device monitor
+   ```
 
-## Home Wi-Fi
+   The firmware and web panel are uploaded separately. Upload the filesystem
+   image again whenever files in `data/` change. The serial monitor runs at
+   19200 baud and prints the access point name and panel URL, or the address
+   assigned by your Wi-Fi network.
 
-Connect to the fallback AP and open `http://192.168.4.1`. In **Wi-Fi
-settings**, enter the SSID and password and select **Connect and save**.
-The ESP32 saves the credentials in NVS and attempts to connect; failed
-credentials remain saved so that they can be corrected via the fallback AP.
-The AP is turned off 15 seconds after a successful connection. Switch the
-phone or computer to the home network and open the IP shown in the panel or
-serial monitor. After a restart or connection loss, the ESP32 retries the
-saved network and activates the fallback AP if it cannot connect. **Forget
-network** deletes the saved credentials and returns to the fallback AP.
+## Connect to Wi-Fi
 
-The web panel has no separate authentication or HTTPS: anyone on the connected
-network can control the PSU, and the Wi-Fi password is transmitted unencrypted.
-Use only a trusted network, and configure Wi-Fi via the protected fallback AP.
-The saved Wi-Fi password is stored in device flash; protect physical access.
+1. Connect your phone or computer to the fallback network. Its name is
+   `Wanptek-` followed by the last eight characters of the board's MAC
+   address; the serial monitor prints the exact name.
+2. Open [http://192.168.4.1](http://192.168.4.1).
+3. Expand **Wi-Fi settings**, enter your 2.4 GHz network name and password,
+   then select **Connect and save**. Leave the password empty for an open
+   network.
+4. Once connected, the fallback access point shuts down after 15 seconds.
+   Switch your phone or computer to the same Wi-Fi network and open the panel
+   at the address shown in the panel or serial monitor.
 
-## PSU serial connection
+Credentials are saved in device flash and retried after a restart or
+connection loss. If the connection fails, the fallback access point starts
+again so you can correct the settings. Select **Forget network** to delete
+the saved credentials and return to the fallback access point.
+
+## Connect the power supply
 
 The firmware follows the Modbus RTU framing and register layout used by
-[flkoliv/sw-wanptek-psu](https://github.com/flkoliv/sw-wanptek-psu):
+[flkoliv/sw-wanptek-psu](https://github.com/flkoliv/sw-wanptek-psu). The
+defaults are:
 
-- address `0`, `19200` baud, `8N1`
-- FC03 reads eight registers beginning at address `0`
-- FC16 writes the status, voltage setpoint, and current setpoint
-- FC16 setpoint byte order follows the endianness bit reported by FC03
-- voltage/current setpoints are limited to the maximum values reported by the PSU
+| Setting | Default |
+| --- | --- |
+| Modbus address | `0` |
+| Serial format | `19200` baud, `8N1` |
+| ESP32-C3 RX / TX | GPIO `3` / GPIO `4` |
+| Measurement interval | `100 ms` |
 
-Defaults in `src/main.cpp` are RX GPIO 3, TX GPIO 4, and the serial settings
-above. Connect PSU TX to ESP32 RX, PSU RX to ESP32 TX, and signal ground where
-required by the interface. **Use a level shifter or isolated interface suited
-to the exact PSU communication port. Do not connect unknown PSU pins directly
-to ESP32 GPIO.** Confirm the PSU model, port, address, and baud rate before
-connecting; Wanptek models and communication interfaces may differ.
+Connect PSU TX to ESP32 RX, PSU RX to ESP32 TX, and signal ground where
+required by the interface. **Do not connect unknown PSU pins directly to
+ESP32 GPIO.** Use an appropriate level shifter or isolated interface for the
+exact PSU communication port. Wanptek models and interfaces may differ;
+confirm the model, port, address, baud rate, and electrical levels before
+connecting.
 
-After joining the ESP32 access point, open the panel URL shown in the serial
-monitor. Enable **Remote control** before changing setpoints. Output enable
-requires confirmation in the page; disabling the output does not.
-The panel reports setpoints as confirmed only after a fresh PSU readback matches
-the requested voltage and current. If verification fails, the serial monitor
-shows the FC16 request, response, and decoded/raw setpoint registers. Disconnect
-the load before troubleshooting unexpected settings.
+After connecting to the panel:
 
-The panel plots the most recent 600 received voltage and current samples.
-The polling interval can be set between 10 and 1000 ms, with a default of
-100 ms after each restart. The displayed actual interval can be longer than
-requested: Modbus frames are serialized, require inter-frame silence, and the
-PSU and network have their own response times. At 19200 baud, the eight-byte
-request and 21-byte response alone take about 15 ms on the wire.
+1. Enable **Remote control**.
+2. Enter voltage and current setpoints and select **Apply setpoints**. The
+   panel confirms them only after a fresh PSU readback matches.
+3. Enable **Output** only when ready; the panel asks for confirmation before
+   switching it on.
 
-The AP password is set at build time in the untracked `config.local.ini` file:
+Disabling the output does not require confirmation. Setpoints are limited to
+the maximum values reported by the power supply. The requested polling
+interval can be set from 10 to 1000 ms, but the actual interval may be longer
+because serial frames are sent sequentially and the PSU and network need time
+to respond. The interval resets to 100 ms after a restart.
 
-```ini
-[env]
-build_flags = -DWANPTEK_AP_PASSWORD=\"your-password\"
+## Security
+
+The web panel uses HTTP and has no separate authentication. Anyone with access
+to the connected Wi-Fi network can control the power supply. Wi-Fi credentials
+are sent without transport encryption and the saved network password is stored
+in device flash. Use a trusted network, set a private access point password,
+and protect physical access to the board. Do not expose the fallback access
+point or panel to untrusted users.
+
+## Troubleshooting
+
+- **The panel is missing or SPIFFS fails to mount:** run `pio run -t uploadfs`
+  after uploading the firmware.
+- **The fallback network is not visible:** some boards require reduced
+  transmit power. Replace the `build_flags` line in `config.local.ini` with
+  the following, then rebuild and upload the firmware:
+
+  ```ini
+  [env]
+  build_flags = -DWANPTEK_AP_PASSWORD=\"choose-a-password\" -DWANPTEK_WIFI_TX_POWER=WIFI_POWER_8_5dBm
+  ```
+
+- **The serial monitor shows no logs:** use the board's native USB Serial/JTAG
+  port. If you use an external UART-to-USB adapter, remove the USB build flags
+  from `platformio.ini` and rebuild.
+- **The power supply does not respond:** verify the PSU model and port,
+  interface and signal levels, TX/RX wiring, ground, address, and serial
+  settings. Disconnect the load before investigating unexpected setpoints.
+
+## Tests
+
+Run the protocol unit tests with PlatformIO:
+
+```sh
+pio test
 ```
-
-The password must be 8–63 characters long. Rebuild and upload the firmware
-after changing it. Keep this file private and do not expose the AP to untrusted
-users; anyone connected to it can control the power supply.
