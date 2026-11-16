@@ -36,6 +36,7 @@ namespace
   HardwareSerial modbusSerial(1);
   AsyncWebServer server(80);
   Preferences wifiPreferences;
+  Preferences settingsPreferences;
   portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
 
   struct PsuState
@@ -150,6 +151,7 @@ namespace
   bool wifiConnecting = false;
   bool wifiConnected = false;
   bool wifiStorageReady = false;
+  bool settingsStorageReady = false;
   uint32_t wifiAttemptStarted = 0;
   uint32_t lastWifiAttempt = 0;
   uint32_t wifiConnectedAt = 0;
@@ -976,6 +978,20 @@ namespace
       return;
     }
     request->send(SPIFFS, "/index.html", "text/html"); });
+    server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+    if (!SPIFFS.exists("/settings.html")) {
+      request->send(404, "text/plain", "Missing data/settings.html");
+      return;
+    }
+    request->send(SPIFFS, "/settings.html", "text/html"); });
+    server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+    if (!SPIFFS.exists("/style.css")) {
+      request->send(404, "text/plain", "Missing data/style.css");
+      return;
+    }
+    request->send(SPIFFS, "/style.css", "text/css"); });
     server.on("/api/state", HTTP_GET, sendState);
     server.on("/api/poll", HTTP_POST, [](AsyncWebServerRequest *request)
               {
@@ -989,6 +1005,15 @@ namespace
     if (end == raw.c_str() || *end != '\0' ||
         interval < MIN_POLL_INTERVAL_MS || interval > MAX_POLL_INTERVAL_MS) {
       request->send(400, "application/json", "{\"error\":\"Interval must be 10-1000 ms\"}");
+      return;
+    }
+    if (!settingsStorageReady) {
+      request->send(503, "application/json", "{\"error\":\"Settings storage is unavailable\"}");
+      return;
+    }
+    if (settingsPreferences.putUShort("poll-ms", static_cast<uint16_t>(interval)) !=
+        sizeof(uint16_t)) {
+      request->send(500, "application/json", "{\"error\":\"Could not save polling interval\"}");
       return;
     }
     portENTER_CRITICAL(&stateMux);
@@ -1118,6 +1143,29 @@ void setup()
   if (!SPIFFS.begin())
   {
     Serial.println("Failed to mount SPIFFS");
+  }
+
+  settingsStorageReady = settingsPreferences.begin("wanptek", false);
+  if (!settingsStorageReady)
+  {
+    Serial.println("Could not open polling settings storage");
+  }
+  else if (settingsPreferences.isKey("poll-ms"))
+  {
+    const uint16_t savedInterval = settingsPreferences.getUShort("poll-ms", 0);
+    if (savedInterval >= MIN_POLL_INTERVAL_MS &&
+        savedInterval <= MAX_POLL_INTERVAL_MS)
+    {
+      pollIntervalMs = savedInterval;
+    }
+    else
+    {
+      Serial.println("Invalid saved polling interval; using default");
+      if (!settingsPreferences.remove("poll-ms"))
+      {
+        Serial.println("Could not remove invalid polling interval");
+      }
+    }
   }
 
   WiFi.persistent(false);

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000808">
+  <title>Settings — Wanptek PSU</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="settings-page">
+    <header class="page-header">
+      <div>
+        <h1>Settings</h1>
+        <p class="muted">Network and measurement options</p>
+      </div>
+      <a class="nav-link" href="/">Dashboard</a>
+    </header>
+
+    <section class="controls">
+      <h2>Measurement interval</h2>
+      <p class="limits">The requested interval can be 10–1000 ms and is saved in NVS. Actual measurements may take longer.</p>
+      <form id="poll-form">
+        <label for="poll-interval">Requested polling interval (ms)
+          <input id="poll-interval" type="number" min="10" max="1000" step="1" value="100" required>
+        </label>
+        <div class="actions"><button type="submit">Save interval</button></div>
+      </form>
+      <p id="poll-status" class="limits" aria-live="polite">Loading interval…</p>
+      <p id="poll-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="controls">
+      <h2>Wi-Fi</h2>
+      <p id="wifi-status" class="muted">Reading Wi-Fi status…</p>
+      <form id="wifi-form">
+        <div class="fields">
+          <label for="wifi-ssid">Network name (SSID)
+            <input id="wifi-ssid" name="ssid" type="text" maxlength="32" required autocomplete="off">
+          </label>
+          <label for="wifi-password">Network password
+            <input id="wifi-password" name="password" type="password" maxlength="63" autocomplete="new-password">
+          </label>
+        </div>
+        <p class="limits">Leave the password empty for an open network. The ESP supports 2.4 GHz Wi-Fi.</p>
+        <div class="actions">
+          <button type="submit">Connect and save</button>
+          <button id="wifi-forget" class="secondary" type="button">Forget network</button>
+        </div>
+      </form>
+      <p id="wifi-message" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    async function refreshPollStatus() {
+      try {
+        const response = await fetch("/api/state", { cache: "no-store" });
+        if (!response.ok) throw new Error("Could not retrieve measurement settings");
+        const state = await response.json();
+        if (document.activeElement !== $("poll-interval")) {
+          $("poll-interval").value = state.pollIntervalMs;
+        }
+        $("poll-status").textContent = state.sampleIntervalMs
+          ? `Actual measurement interval: ${state.sampleIntervalMs} ms.`
+          : `Requested interval: ${state.pollIntervalMs} ms. Waiting for a measurement…`;
+      } catch (error) {
+        $("poll-status").textContent = error.message;
+      }
+    }
+
+    $("poll-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = event.submitter;
+      button.disabled = true;
+      try {
+        const query = new URLSearchParams({ interval: $("poll-interval").value });
+        const response = await fetch(`/api/poll?${query}`, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not set polling interval");
+        $("poll-message").textContent = "Interval saved to device.";
+        refreshPollStatus();
+      } catch (error) {
+        $("poll-message").textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    async function refreshWifi() {
+      try {
+        const response = await fetch("/api/wifi", { cache: "no-store" });
+        if (!response.ok) throw new Error("Could not retrieve Wi-Fi status");
+        const wifi = await response.json();
+        if (wifi.connected) {
+          $("wifi-status").textContent = `Connected to ${wifi.ssid}. Panel: http://${wifi.ip}` +
+            (wifi.apStarted ? ". The fallback AP will soon be disabled; switch your device to the home network." : "");
+        } else if (wifi.connecting) {
+          $("wifi-status").textContent = `Connecting to ${wifi.ssid}…`;
+        } else {
+          $("wifi-status").textContent = wifi.apStarted
+            ? "Not connected to the home network. The fallback AP is active."
+            : "Not connected to the home network; the fallback AP is inactive.";
+        }
+        $("wifi-message").textContent = wifi.error || "";
+      } catch (error) {
+        $("wifi-message").textContent = error.message;
+      }
+    }
+
+    async function sendWifi(path, params) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(params)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not change Wi-Fi settings");
+    }
+
+    $("wifi-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = event.submitter;
+      button.disabled = true;
+      try {
+        await sendWifi("/api/wifi", {
+          ssid: $("wifi-ssid").value,
+          password: $("wifi-password").value
+        });
+        $("wifi-password").value = "";
+        $("wifi-message").textContent = "Settings sent. Attempting to connect.";
+        window.setTimeout(refreshWifi, 1500);
+      } catch (error) {
+        $("wifi-message").textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    $("wifi-forget").addEventListener("click", async () => {
+      if (!window.confirm("Forget the saved network and return to the fallback AP?")) return;
+      try {
+        await sendWifi("/api/wifi/forget", {});
+        $("wifi-password").value = "";
+        $("wifi-message").textContent = "Removing settings. Connect to the fallback AP.";
+        window.setTimeout(refreshWifi, 1500);
+      } catch (error) {
+        $("wifi-message").textContent = error.message;
+      }
+    });
+
+    refreshPollStatus();
+    refreshWifi();
+    window.setInterval(refreshPollStatus, 2000);
+    window.setInterval(refreshWifi, 2000);
+  </script>
+</body>
+</html>

@@ -60,9 +60,8 @@ boards may need a lower Wi-Fi transmit power; see
    `Wanptek-` followed by the last eight characters of the board's MAC
    address; the serial monitor prints the exact name.
 2. Open [http://192.168.4.1](http://192.168.4.1).
-3. Expand **Wi-Fi settings**, enter your 2.4 GHz network name and password,
-   then select **Connect and save**. Leave the password empty for an open
-   network.
+3. Open **Settings**, enter your 2.4 GHz network name and password, then select
+   **Connect and save**. Leave the password empty for an open network.
 4. Once connected, the fallback access point shuts down after 15 seconds.
    Switch your phone or computer to the same Wi-Fi network and open the panel
    at the address shown in the panel or serial monitor.
@@ -101,10 +100,18 @@ After connecting to the panel:
    switching it on.
 
 Disabling the output does not require confirmation. Setpoints are limited to
-the maximum values reported by the power supply. The requested polling
-interval can be set from 10 to 1000 ms, but the actual interval may be longer
-because serial frames are sent sequentially and the PSU and network need time
-to respond. The interval resets to 100 ms after a restart.
+the maximum values reported by the power supply. The dashboard includes
+optional quick presets; selecting one fills in the values but does not apply
+them. Battery presets are grouped by chemistry and change the voltage only;
+set the current limit separately. The Pb and NiMH values are nominal voltages,
+not charging settings. Verify the battery chemistry, cell count, charging
+voltage, and charge-current specifications, and use an appropriate charger
+and protection circuit.
+
+The requested polling interval can be set from 10 to 1000 ms on the **Settings**
+page and is saved in NVS, so it persists across restarts. A new device uses the
+100 ms default. The actual interval may be longer because serial frames are sent
+sequentially and the PSU and network need time to respond.
 
 ## Security
 
