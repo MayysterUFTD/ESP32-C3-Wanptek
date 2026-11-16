@@ -36,8 +36,8 @@
       </div>
     </section>
 
-    <section class="controls setpoint-panel">
-      <h2>Setpoints</h2>
+    <details class="controls setpoint-panel" open>
+      <summary><h2>Setpoints</h2></summary>
       <div class="presets">
         <h3>Quick presets</h3>
         <div class="preset-list">
@@ -48,7 +48,8 @@
           <button class="secondary preset" type="button" data-voltage="14.40" data-current="5">14.4 V / 5 A</button>
           <button class="secondary preset" type="button" data-voltage="24.00" data-current="1">24 V / 1 A</button>
         </div>
-        <h3 class="battery-heading">Battery presets</h3>
+        <details class="battery-section">
+        <summary><h3>Battery presets</h3></summary>
         <div class="battery-presets">
           <details class="battery-group" open>
             <summary>Li-ion</summary>
@@ -82,12 +83,14 @@
           </details>
           <details class="battery-group" open>
             <summary>Lead-acid (Pb)</summary>
-            <p class="limits">Nominal voltages only (2.00 V per cell), not charging settings.</p>
+            <p class="limits">Flooded lead-acid target: 2.35 V per cell. Verify the battery specifications, charging stage, and temperature. Use a proper battery charger.</p>
             <div class="preset-list">
-              <button class="secondary preset" type="button" data-voltage="2.00">1S · 2.00 V nominal</button>
-              <button class="secondary preset" type="button" data-voltage="4.00">2S · 4.00 V nominal</button>
-              <button class="secondary preset" type="button" data-voltage="6.00">3S · 6.00 V nominal</button>
-              <button class="secondary preset" type="button" data-voltage="8.00">4S · 8.00 V nominal</button>
+              <button class="secondary preset" type="button" data-voltage="2.35">1S · 2.35 V</button>
+              <button class="secondary preset" type="button" data-voltage="4.70">2S · 4.70 V</button>
+              <button class="secondary preset" type="button" data-voltage="7.05">3S · 7.05 V</button>
+              <button class="secondary preset" type="button" data-voltage="9.40">4S · 9.40 V</button>
+              <button class="secondary preset" type="button" data-voltage="11.75">5S · 11.75 V</button>
+              <button class="secondary preset" type="button" data-voltage="14.10">6S · 14.10 V</button>
             </div>
           </details>
           <details class="battery-group" open>
@@ -98,10 +101,17 @@
               <button class="secondary preset" type="button" data-voltage="2.40">2S · 2.40 V nominal</button>
               <button class="secondary preset" type="button" data-voltage="3.60">3S · 3.60 V nominal</button>
               <button class="secondary preset" type="button" data-voltage="4.80">4S · 4.80 V nominal</button>
+              <button class="secondary preset" type="button" data-voltage="6.00">5S · 6.00 V nominal</button>
+              <button class="secondary preset" type="button" data-voltage="7.20">6S · 7.20 V nominal</button>
+              <button class="secondary preset" type="button" data-voltage="8.40">7S · 8.40 V nominal</button>
+              <button class="secondary preset" type="button" data-voltage="9.60">8S · 9.60 V nominal</button>
+              <button class="secondary preset" type="button" data-voltage="10.80">9S · 10.80 V nominal</button>
+              <button class="secondary preset" type="button" data-voltage="12.00">10S · 12.00 V nominal</button>
             </div>
           </details>
         </div>
-        <p class="limits">Battery presets change voltage only; check and set the current limit separately. Presets only fill in the values; select Apply setpoints to send them. Verify the battery chemistry, cell count, charging voltage, and manufacturer’s charging-current limit. Use a proper battery charger and protection circuit.</p>
+        </details>
+        <p class="limits">Battery presets change voltage only; check and set the current limit separately. Use a proper protection circuit.</p>
       </div>
       <form id="setpoints">
         <div class="fields">
@@ -121,17 +131,17 @@
         </div>
       </form>
       <p id="message" role="status" aria-live="polite"></p>
-    </section>
+    </details>
 
-    <section class="controls chart-panel">
-      <h2>Live charts</h2>
+    <details id="chart-panel" class="controls chart-panel" open>
+      <summary><h2>Live charts</h2></summary>
       <p class="limits">Last 600 received measurements; history is not saved when the page is closed.</p>
       <p class="chart-label">Voltage (V)</p>
       <canvas id="voltage-chart" aria-label="Voltage chart"></canvas>
       <p class="chart-label">Current (A)</p>
       <canvas id="current-chart" aria-label="Current chart"></canvas>
       <p id="poll-status" class="limits">Waiting for a measurement…</p>
-    </section>
+    </details>
   </main>
   <script>
     const $ = (id) => document.getElementById(id);
@@ -376,6 +386,9 @@
       refresh();
     });
 
+    $("chart-panel").addEventListener("toggle", () => {
+      if ($("chart-panel").open) scheduleCharts();
+    });
     window.addEventListener("resize", scheduleCharts);
     scheduleCharts();
     pollLoop();

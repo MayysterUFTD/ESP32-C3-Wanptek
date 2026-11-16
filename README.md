@@ -99,14 +99,19 @@ After connecting to the panel:
 3. Enable **Output** only when ready; the panel asks for confirmation before
    switching it on.
 
+The **Setpoints** and **Live charts** sections can be collapsed using their
+headings. Both are open by default.
+
 Disabling the output does not require confirmation. Setpoints are limited to
 the maximum values reported by the power supply. The dashboard includes
 optional quick presets; selecting one fills in the values but does not apply
-them. Battery presets are grouped by chemistry and change the voltage only;
-set the current limit separately. The Pb and NiMH values are nominal voltages,
-not charging settings. Verify the battery chemistry, cell count, charging
-voltage, and charge-current specifications, and use an appropriate charger
-and protection circuit.
+them. Expand **Battery presets** to view the chemistry groups. Battery presets
+change the voltage only; set the current limit separately. The flooded
+lead-acid presets use 2.35 V per cell, up to 6S; verify the voltage for the
+battery, charging stage, and temperature. The NiMH presets are nominal values,
+not charging settings, up to 10S (12 V nominal). Verify the battery chemistry,
+cell count, charging voltage, and charge-current specifications, and use an
+appropriate charger and protection circuit.
 
 The requested polling interval can be set from 10 to 1000 ms on the **Settings**
 page and is saved in NVS, so it persists across restarts. A new device uses the
